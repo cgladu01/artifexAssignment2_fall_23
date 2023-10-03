@@ -1,0 +1,111 @@
+---
+title: "housingmortgage"
+output: html_document
+date: "2023-09-28"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Creating dataset
+```{r}
+library(tidyverse)
+library(quantmod)
+library(broom)
+
+# https://fred.stlouisfed.org/
+pr = getSymbols('MORTGAGE30US',src='FRED', warnings = F) # 30-Year Fixed Rate Mortgage Average
+home = getSymbols('CSUSHPINSA', src = 'FRED') # S&P/Case-Shiller U.S. National Home Price Index
+
+
+# clean up dataset
+mort = tidy(MORTGAGE30US) %>% # tidy is from the broom pkg - coerces xts object to a data frame
+  mutate(date = ymd(index)) %>% # coerce the index to be a date
+  filter(year(date) >= 2000, year(date) <= 2004) %>% # date range
+  mutate(mo_year = ymd ( str_c (year(date), "-", month(date), "-", 01 )) ) %>% # make a new date so we can group by month/year 
+  group_by(mo_year) %>% 
+  summarise(val = mean(value)) %>% 
+  filter(mo_year < "2023-08-01")
+
+
+home_pr = tidy(CSUSHPINSA) %>% 
+  mutate(date = ymd(index)) %>% 
+  filter(year(date) >= 2000, year(date) <= 2004)
+
+combined_dat = data.frame(mort = mort$val, pr = home_pr$value, date = home_pr$date)
+
+```
+### Question 1
+
+generating linear regression
+```{r}
+model <- lm(pr ~ mort, combined_dat)
+
+summary(model)
+```
+Equation for Question 1
+$pr = B_0 + B_1X$
+
+$pr = 231.376 + -16.024X$
+
+
+### Question 2
+```{r}
+resid <- resid(model)
+hist(resid)
+```
+### Question 3
+```{r}
+plot(combined_dat$date, resid)
+```
+The residuals are not consistent throughout the time period. They are below 0 between 2001-2003ish and well above 0 in 2004. 
+
+### Question 4
+We could add date (specifically, is it 2004) as another variable. Adding the date could help take into account economic conditions at different times that isn't accounted for by the mortgage rate.
+
+```{r}
+combined_dat <- combined_dat %>% 
+  mutate(shrek2 = date >= as.Date("2004-01-01"))
+
+model2elecboog <- model <- lm(pr ~ mort + shrek2, combined_dat)
+summary(model)
+
+sum(resid^2)
+sum(resid(model2elecboog)^2)
+```
+Comparing the two models, including the 2004 variable improves the model by a lot.
+
+### Question 5
+```{r}
+eightpercentpr = 231.376 + -16.024*0.08
+eightpercentpr
+
+residualeight = 305- eightpercentpr
+residualeight
+```
+The residual is very high compared to the other residuals
+
+### Question 6
+```{r}
+mort2 = tidy(MORTGAGE30US) %>% # tidy is from the broom pkg - coerces xts object to a data frame
+  mutate(date = ymd(index)) %>% # coerce the index to be a date
+  filter(year(date) >= 2012, year(date) <= 2022) %>% # date range
+  mutate(mo_year = ymd ( str_c (year(date), "-", month(date), "-", 01 )) ) %>% # make a new date so we can group by month/year 
+  group_by(mo_year) %>% 
+  summarise(val = mean(value)) %>% 
+  filter(mo_year < "2023-08-01")
+
+home_pr2 = tidy(CSUSHPINSA) %>% 
+  mutate(date = ymd(index)) %>% 
+  filter(year(date) >= 2012, year(date) <= 2022)
+
+combined_dat2 = data.frame(mort = mort2$val, pr = home_pr2$value, date = home_pr2$date)
+
+ggplot(combined_dat2, aes( mort, pr, color = as.factor( year(date) ) ) ) + 
+  geom_point() + 
+  theme_minimal() + 
+  ggtitle("Case Shiller Index (y) and Avg. Mortgage Rates (x)") + 
+  xlab("30-Year Fixed Rate Mortgage Average") + 
+  ylab("S&P/Case-Shiller U.S. National Home Price Index")
+```
+We do not see the same relationship. While there is an observable pattern, it is definitely not linear.
